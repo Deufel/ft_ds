@@ -3,11 +3,14 @@
 # dependencies = [
 #     "anthropic==0.68.0",
 #     "anyio==4.10.0",
+#     "duckdb==1.4.0",
 #     "fastcore==1.8.8",
+#     "fastmigrate==0.4.0",
 #     "httpx==0.28.1",
 #     "pytest==8.4.2",
 #     "python-dateutil==2.9.0.post0",
 #     "python-fasthtml==0.12.27",
+#     "sqlglot==27.16.3",
 #     "starlette==0.48.0",
 # ]
 # ///
@@ -130,6 +133,7 @@ def _():
         inspect,
         is_async_callable,
         json,
+        mo,
         ns,
         parse_qs,
         partialmethod,
@@ -146,6 +150,12 @@ def _():
         uuid4,
         warn,
     )
+
+
+@app.cell
+def _():
+    from starlette.testclient import TestClient
+    return (TestClient,)
 
 
 @app.cell
@@ -197,6 +207,7 @@ def _(
     WebSocketRoute,
     asyncio,
     b64encode,
+    build_sse_event,
     camel2words,
     contextlib,
     cookies,
@@ -559,7 +570,7 @@ def _(
 
         async def disconnect_handler(self, ws, close_code): 
             await generic_handler(disconn, ws)
-    
+
         async def receive_handler(self, ws, data): 
             await generic_handler(recv, ws, data)
 
@@ -723,9 +734,17 @@ def _(
         resp,kw = partition_response(req, resp)
         if cls is not empty: return cls(resp, status_code=status_code, **kw)
         if isinstance(resp, Response): return resp
+        # added datastar handeling for SSE here. 
         if is_ft_response(resp):
-            cts = extract_content(req, resp)
-            return HTMLResponse(cts, status_code=status_code, **kw)
+            if req.headers.get('datastar-request') == 'true':
+                # Format as SSE using your build_sse_event function
+                sse_content = build_sse_event(resp)
+                return StreamingResponse(iter([sse_content]), media_type="text/event-stream", **kw)
+            else:
+                cts = extract_content(req, resp)
+                return HTMLResponse(cts, status_code=status_code, **kw)
+
+
         if isinstance(resp, str): cls = HTMLResponse
         elif isinstance(resp, Mapping): cls = JSONResponse
         else:
@@ -1197,44 +1216,405 @@ def _(Div, build_sse_event):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
 def _(FastHTML, TestClient, json):
     def test_signals_get_request():
         app = FastHTML()
-    
+
         @app.get('/test-signals')
         def test_route(signals): 
             return f"Received signals: {signals}"
-    
+
         client = TestClient(app)
         signal_data = {"user_id": 123, "current_page": "dashboard"}
         response = client.get(f'/test-signals?datastar={json.dumps(signal_data)}')
-    
+
         assert "{'user_id': 123, 'current_page': 'dashboard'}" in response.text
 
     def test_signals_post_request():
         app = FastHTML()
-    
+
         @app.post('/test-signals')
         def test_route(signals): 
             return f"Received signals: {signals}"
-    
+
         client = TestClient(app)
         signal_data = {"user_id": 456, "action": "submit_form"}
         response = client.post('/test-signals', json=signal_data)
-    
-        assert "{'user_id': 456, 'action': 'submit_form'}" in response.text
 
+        assert "{'user_id': 456, 'action': 'submit_form'}" in response.text
+    return
+
+
+@app.cell
+def _(json):
+    def build_signal_event(signals, only_if_missing=False):
+        data_lines = ["event: datastar-patch-signals"]
+        if only_if_missing:
+            data_lines.append("data: onlyIfMissing true")
+
+        # Convert signals dict to JSON string
+        signal_json = json.dumps(signals)
+        data_lines.append(f"data: signals {signal_json}")
+
+        return "\n".join(data_lines) + "\n\n"
+    return (build_signal_event,)
+
+
+@app.cell
+def _(build_signal_event):
+    def test_build_signal_event_basic():
+        signals = {"validation_errors": [], "form_valid": True}
+        result = build_signal_event(signals)
+
+        assert "event: datastar-patch-signals" in result
+        assert 'data: signals {"validation_errors": [], "form_valid": true}' in result
+        assert result.endswith("\n\n")
+    return
+
+
+@app.cell
+def _(Div, FastHTML, TestClient):
+    def test_datastar_sse_response():
+        app = FastHTML()
+
+        @app.get('/test')
+        def test_route():
+            return Div("Hello Datastar!", id="content")
+
+        client = TestClient(app)
+
+        # Test without datastar header (should get HTML)
+        response = client.get('/test')
+        assert response.headers['content-type'] == 'text/html; charset=utf-8'
+        assert '<div id="content">Hello Datastar!</div>' in response.text
+
+        # Test with datastar header (should get SSE)
+        response_sse = client.get('/test', headers={'datastar-request': 'true'})
+        assert 'text/event-stream' in response_sse.headers['content-type']
+        assert 'event: datastar-patch-elements' in response_sse.text
+        assert 'data: elements <div id="content">Hello Datastar!</div>' in response_sse.text
+
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""# demo""")
     return
 
 
 @app.cell
 def _():
+    import apsw
+    return (apsw,)
+
+
+@app.cell
+def _(apsw, db_path):
+    #| export
+
+
+    class DBPool:
+        """
+        Connection pool for SQLite database access using APSW.
+
+        Manages a pool of database connections to improve performance by reusing
+        connections rather than creating new ones for each operation.
+        """
+
+        def __init__(self, 
+                     db_path: str = "data/app.db",  # Path to the SQLite database file
+                     max_size: int = 6              # Maximum number of connections to keep in pool
+                    ):
+            """Initialize the database connection pool."""
+            self.db_path, self.max_size, self.pool = db_path, max_size, []
+
+        def get_connection(self):
+            """
+            Get a database connection from the pool or create a new one.
+
+            Returns a connection with 30-second busy timeout configured.
+            """
+            if self.pool: 
+                return self.pool.pop()
+
+            try:
+                conn = apsw.Connection(self.db_path)
+                conn.setbusytimeout(30000)  # 30 second timeout
+                return conn
+            except Exception as e:
+                print(f"Failed to create connection: {e}")
+                raise
+
+        def return_connection(self, 
+                             conn  # Database connection to return to pool
+                            ):
+            """Return a connection to the pool or close it if pool is full."""
+            if len(self.pool) < self.max_size: 
+                self.pool.append(conn)
+            else: 
+                conn.close()
+
+        def get_status(self):
+            """Get current pool status information."""
+            return {
+                'current_pool_size': len(self.pool), 
+                'max_pool_size': self.max_size, 
+                'database_path': self.db_path,
+                'connections_available': len(self.pool)
+            }
+
+        def __call__(self):
+            """
+            Get a connection with context manager support.
+
+            Returns a DBConnection context manager for safe connection handling.
+            """
+            return DBConnection(self)
+
+
+    #| export
+
+    class DBConnection:
+        """Context manager for safe database connection handling."""
+
+        def __init__(self, pool: DBPool):  # DBPool instance to get/return connections from
+            """Initialize connection context manager."""
+            self.pool, self.conn = pool, None
+
+        def __enter__(self):
+            """Enter context manager and get database connection."""
+            self.conn = self.pool.get_connection()
+            return self.conn
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            """Exit context manager and return connection to pool."""
+            if self.conn:
+                self.pool.return_connection(self.conn)
+
+
+    #| export
+
+    def initialize_database_pool(max_size: int = 6):
+        """Initialize the global database connection pool using global db_path."""
+        global db_pool
+
+        # Directly use the global db_path variable
+        db_pool = DBPool(str(db_path), max_size)
+
+        # Pre-populate pool with initial connections
+        initial_connections = min(3, max_size)
+        for _ in range(initial_connections): 
+            try: 
+                conn = db_pool.get_connection()
+                db_pool.return_connection(conn)
+            except Exception as e:
+                print(f"Failed to pre-populate connection: {e}")
+                break
+
+        print(f"Initialized database pool: {db_pool.get_status()}")
+
+
+    return (db_pool,)
+
+
+@app.cell
+def _(db_pool):
+    # global variation makes sense everything needs access to the pool
+    class BaseDAO:
+        "Base Data Access Object with connection management using global pool"
+
+        def with_conn(self, f):
+            "Execute function with a connection from the global pool"
+            with db_pool() as conn:
+                return f(conn)
+    return (BaseDAO,)
+
+
+@app.cell
+def _(BaseDAO):
+    class TaskDAO(BaseDAO):
+        def get_all_tasks(self):
+            return self.with_conn(lambda conn: self._get_all_tasks(conn))
+        def _get_all_tasks(self, conn):
+            cursor = conn.cursor()
+            result = cursor.execute("SELECT * FROM tasks ORDER BY created_at DESC").fetchall()
+            return [dict(zip([d[0] for d in cursor.getdescription()], row)) for row in result]
+
+        def update_status(self, task_id, completed):
+            return self.with_conn(lambda conn: self._update_status(conn, task_id, completed))
+
+        def _update_status(self, conn, task_id, completed):
+            cursor = conn.cursor()
+            cursor.execute("UPDATE tasks SET completed = ? WHERE task_id = ?", [completed, task_id])
+            return conn.changes()
+
+        def bulk_update_status(self, task_ids, completed):
+            return self.with_conn(lambda conn: self._bulk_update_status(conn, task_ids, completed))
+        def _bulk_update_status(self, conn, task_ids, completed):
+            cursor = conn.cursor()
+            placeholders = ','.join(['?'] * len(task_ids))
+            cursor.execute(f"UPDATE tasks SET completed = ? WHERE task_id IN ({placeholders})", [completed] + task_ids)
+            return conn.changes()
+
+        def create_task(self, title, description=""):
+            return self.with_conn(lambda conn: self._create_task(conn, title, description))
+
+        def _create_task(self, conn, title, description):
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO tasks (title, description, completed) VALUES (?, ?, ?)", 
+                           [title, description, False])
+            return conn.last_insert_rowid()
+
+
+    return (TaskDAO,)
+
+
+@app.cell
+def _(Input, Table, Tbody, Th, Thead, Tr, task_row):
+    def task_table(tasks):
+        return Table(
+            Thead(
+                Tr(
+                    Th(Input(type="checkbox", data_bind_checked="$selections.length === $tasks.length")),
+                    Th("Title"),
+                    Th("Status"),
+                    Th("Actions")
+                )
+            ),
+            Tbody(
+                *[task_row(task) for task in tasks]
+            ),
+            data_signals={"selections": [], "tasks": tasks}
+        )
+    return (task_table,)
+
+
+@app.cell
+def _(Button, Input, Td, Tr):
+    def task_row(task):
+        return Tr(
+            Td(Input(type="checkbox", value=str(task['task_id']), 
+                    data_bind_selections=f"task_{task['task_id']}")),
+            Td(task['title']),
+            Td("✓" if task['completed'] else "○"),
+            Td(Button("Toggle", data_on_click=f"@put('/task/{task['task_id']}/toggle')"))
+        )
+    return (task_row,)
+
+
+@app.cell
+def _(FastHTML):
+    app = FastHTML(htmx=False)
+    return (app,)
+
+
+@app.cell
+def _(TaskDAO, app, task_table):
+    @app.get('/tasks')
+    def tasks_page(signals):
+        task_dao = TaskDAO()
+        tasks = task_dao.get_all_tasks()
+        return task_table(tasks)
     return
+
+
+@app.cell
+def _(TaskDAO, app, task_table):
+    @app.put('/task/{task_id}/toggle')
+    def toggle_task(task_id: int, signals):
+        task_dao = TaskDAO()
+        # Get current status and flip it
+        tasks = task_dao.get_all_tasks()
+        current_task = next(t for t in tasks if t['task_id'] == task_id)
+        new_status = not current_task['completed']
+
+        task_dao.update_status(task_id, new_status)
+
+        # Return updated table
+        updated_tasks = task_dao.get_all_tasks()
+        return task_table(updated_tasks)
+    return
+
+
+@app.cell
+def _(TaskDAO, app, task_table):
+    @app.put('/tasks/complete')
+    def bulk_complete(signals):
+        task_dao = TaskDAO()
+        selected_ids = signals.get('selections', [])
+
+        if selected_ids:
+            task_dao.bulk_update_status(selected_ids, True)
+
+        # Return updated table
+        updated_tasks = task_dao.get_all_tasks()
+        return task_table(updated_tasks)
+    return
+
+
+@app.cell
+def _(TaskDAO, app, task_table):
+    @app.put('/tasks/incomplete')
+    def bulk_incomplete(signals):
+        task_dao = TaskDAO()
+        selected_ids = signals.get('selections', [])
+
+        if selected_ids:
+            task_dao.bulk_update_status(selected_ids, False)
+
+        # Return updated table
+        updated_tasks = task_dao.get_all_tasks()
+        return task_table(updated_tasks)
+    return
+
+
+app._unparsable_cell(
+    r"""
+    import subprocess
+    import os
+
+    # Method 1: Shell escape with ! (simplest)
+    !ls -la
+
+    # Method 2: subprocess.run() (most flexible and recommended)
+    result = subprocess.run(['ls', '-la'], capture_output=True, text=True)
+    print(\"stdout:\", result.stdout)
+    print(\"stderr:\", result.stderr)
+    print(\"return code:\", result.returncode)
+
+    # Method 3: subprocess.check_output() (for capturing output)
+    try:
+        output = subprocess.check_output(['pwd'], text=True)
+        print(\"Current directory:\", output.strip())
+    except subprocess.CalledProcessError as e:
+        print(f\"Command failed: {e}\")
+
+    # Method 4: os.system() (simple but limited)
+    exit_code = os.system('echo \"Hello from os.system\"')
+    print(f\"Exit code: {exit_code}\")
+
+    # Method 5: subprocess.Popen() (for more control)
+    process = subprocess.Popen(['echo', 'Hello from Popen'], 
+                              stdout=subprocess.PIPE, 
+                              stderr=subprocess.PIPE, 
+                              text=True)
+    stdout, stderr = process.communicate()
+    print(\"Popen output:\", stdout.strip())
+
+    # For your specific case with fastmigrate:
+    # You can capture the output like this:
+    try:
+        migrate_result = subprocess.run(['fastmigrate'], 
+                                      capture_output=True, 
+                                      text=True, 
+                                      check=True)
+        print(\"Migration successful:\", migrate_result.stdout)
+    except subprocess.CalledProcessError as e:
+        print(\"Migration failed:\", e.stderr)
+    """,
+    name="_"
+)
 
 
 if __name__ == "__main__":
