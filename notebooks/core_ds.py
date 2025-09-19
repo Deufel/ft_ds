@@ -3,21 +3,27 @@
 # dependencies = [
 #     "anthropic==0.68.0",
 #     "anyio==4.10.0",
+#     "apsw==3.50.4.0",
 #     "duckdb==1.4.0",
 #     "fastcore==1.8.8",
 #     "fastmigrate==0.4.0",
 #     "httpx==0.28.1",
+#     "ipython==9.5.0",
+#     "mohtml==0.1.11",
+#     "moterm==0.1.0",
 #     "pytest==8.4.2",
 #     "python-dateutil==2.9.0.post0",
 #     "python-fasthtml==0.12.27",
+#     "rich==14.1.0",
 #     "sqlglot==27.16.3",
 #     "starlette==0.48.0",
+#     "uvicorn==0.35.0",
 # ]
 # ///
 
 import marimo
 
-__generated_with = "0.15.5"
+__generated_with = "0.16.0"
 app = marimo.App(width="medium")
 
 
@@ -100,6 +106,7 @@ def _():
         List,
         Mapping,
         Middleware,
+        Optional,
         Parameter,
         RedirectResponse,
         Request,
@@ -152,10 +159,88 @@ def _():
     )
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""## Development Packages""")
+    return
+
+
 @app.cell
 def _():
     from starlette.testclient import TestClient
     return (TestClient,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""## FastHtml Core""")
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    # Basic accordion with markdown content
+    basic_accordion = mo.accordion({
+        "Removed underscore prefixes from all internal functions:": """
+    _params → get_function_params\n
+    _get_htmx → get_htmx_headers\n
+    _mk_list → make_list\n
+    _fix_anno → fix_annotation\n
+    _form_arg → form_arg\n
+    _to_htmx_header → to_htmx_header\n
+    _annotations → get_annotations_safe\n
+    _is_body → is_body_type\n
+    _formitem → get_form_item\n
+    _from_body → from_body\n
+    _find_p → find_param\n
+    _wrap_req → wrap_request\n
+    _handle → handle_async\n
+    _find_wsp → find_websocket_param\n
+    _wrap_ws → wrap_websocket\n
+    _send_ws → send_websocket\n
+    _ws_endp → websocket_endpoint\n
+    _verbs → verbs\n
+    _url_for → url_for\n
+    _find_targets → find_targets\n
+    _apply_ft → apply_ft\n
+    _to_xml → to_xml_with_targets\n
+    _iter_typs → iter_types\n
+    _part_resp → partition_response\n
+    _xt_cts → extract_content\n
+    _is_ft_resp → is_ft_response\n
+    _resp → create_response\n
+    _wrap_call → wrap_function_call\n
+    _list → make_list_safe\n
+    _wrap_ex → wrap_exception_handler\n
+    _endp → create_endpoint\n
+    _add_ws → add_websocket_route\n
+    _mk_locfunc → make_location_function\n
+    _add_route → add_http_route\n
+    _static_exts → static_extensions\n
+    _add_ids → add_ids\n
+        """,
+        "Updated class attributes and method names:": """
+    RouteFuncs._funcs → RouteFuncs.route_functions\n
+    APIRouter._wrap_func → APIRouter.wrap_route_function\n
+    Client._sync → Client.sync_request\n
+    app._send → app.websocket_send\n
+    MiddlewareBase._app → MiddlewareBase.app\n
+        """,
+        "Benifits For Marimo": """
+        No more private function conflicts: Functions without underscores are properly accessible in marimo notebooks
+    Better discoverability: All functions are now properly exposed and can be imported/used directly
+    Cleaner namespace: The module follows Python conventions better without excessive use of "private" functions
+    Improved debugging: Stack traces and error messages will show more readable function names
+
+    The functionality remains exactly the same - only the naming has changed to be more marimo-friendly. You can now use this refactored version in your marimo notebooks without any accessibility issues.
+        """ 
+    })
+
+
+    mo.vstack([
+        basic_accordion,
+    ])
+    return
 
 
 @app.cell
@@ -781,12 +866,13 @@ def _(
     }
 
     # %% ../nbs/api/00_core.ipynb
-    htmxsrc   = Script(src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.6/dist/htmx.min.js")
-    fhjsscr   = Script(src="https://cdn.jsdelivr.net/gh/answerdotai/fasthtml-js@1.0.12/fasthtml.js")
-    surrsrc   = Script(src="https://cdn.jsdelivr.net/gh/answerdotai/surreal@main/surreal.js")
-    scopesrc  = Script(src="https://cdn.jsdelivr.net/gh/gnat/css-scope-inline@main/script.js")
-    viewport  = Meta(name="viewport", content="width=device-width, initial-scale=1, viewport-fit=cover")
-    charset   = Meta(charset="utf-8")
+    datastarsrc = Script(type="module", src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.5/bundles/datastar.js")
+    htmxsrc     = Script(src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.6/dist/htmx.min.js")
+    fhjsscr     = Script(src="https://cdn.jsdelivr.net/gh/answerdotai/fasthtml-js@1.0.12/fasthtml.js")
+    surrsrc     = Script(src="https://cdn.jsdelivr.net/gh/answerdotai/surreal@main/surreal.js")
+    scopesrc    = Script(src="https://cdn.jsdelivr.net/gh/gnat/css-scope-inline@main/script.js")
+    viewport    = Meta(name="viewport", content="width=device-width, initial-scale=1, viewport-fit=cover")
+    charset     = Meta(charset="utf-8")
 
     # %% ../nbs/api/00_core.ipynb
     def get_key(key=None, fname='.sesskey'):
@@ -826,11 +912,12 @@ def _(
         return p + ('?' + urlencode({k:'' if v in (False,None) else v for k,v in kw.items()},doseq=True) if kw else '')
 
     # %% ../nbs/api/00_core.ipynb
-    def def_hdrs(htmx=True, surreal=True):
-        "Default headers for a FastHTML app"
+    def def_hdrs(htmx=False, surreal=False, datastar=True):
+        "Default headers for a FastHTML app (mod. for datastar)"
         hdrs = []
         if surreal: hdrs = [surrsrc,scopesrc] + hdrs
         if htmx: hdrs = [htmxsrc,fhjsscr] + hdrs
+        if datastar: hdrs = [datastarsrc] + hdrs
         return [charset, viewport] + hdrs
 
     # %% ../nbs/api/00_core.ipynb
@@ -849,9 +936,10 @@ def _(
 
     # %% ../nbs/api/00_core.ipynb
     class FastHTML(Starlette):
-        def __init__(self, debug=False, routes=None, middleware=None, title: str = "FastHTML page", exception_handlers=None,
+        def __init__(self, debug=False, routes=None, middleware=None, title: str = "FastTag + Datastar", exception_handlers=None,
                      on_startup=None, on_shutdown=None, lifespan=None, hdrs=None, ftrs=None, exts=None,
-                     before=None, after=None, surreal=True, htmx=True, default_hdrs=True, sess_cls=SessionMiddleware,
+                     before=None, after=None, surreal=False, htmx=False, datastar=True,  
+                     default_hdrs=True, sess_cls=SessionMiddleware,
                      secret_key=None, session_cookie='session_', max_age=365*24*3600, sess_path='/',
                      same_site='lax', sess_https_only=False, sess_domain=None, key_fname='.sesskey',
                      body_wrap=noop_body, htmlkw=None, nb_hdrs=False, canonical=True, **bodykw):
@@ -860,7 +948,7 @@ def _(
             hdrs,ftrs,exts = map(listify, (hdrs,ftrs,exts))
             exts = {k:htmx_exts[k] for k in exts}
             htmlkw = htmlkw or {}
-            if default_hdrs: hdrs = def_hdrs(htmx, surreal=surreal) + hdrs
+            if default_hdrs: hdrs = def_hdrs(htmx, surreal=surreal, datastar=datastar ) + hdrs
             hdrs += [Script(src=ext) for ext in exts.values()]
             if IN_NOTEBOOK:
                 hdrs.append(iframe_scr)
@@ -1176,6 +1264,12 @@ def _(
     return (FastHTML,)
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""## Datastar utils""")
+    return
+
+
 @app.cell
 def _(to_xml):
     def build_sse_event(ft_content, mode=None, selector=None, transition=False):
@@ -1293,13 +1387,12 @@ def _(Div, FastHTML, TestClient):
         assert 'text/event-stream' in response_sse.headers['content-type']
         assert 'event: datastar-patch-elements' in response_sse.text
         assert 'data: elements <div id="content">Hello Datastar!</div>' in response_sse.text
-
     return
 
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.md(r"""# demo""")
+    mo.md(r"""## demo (WIP)""")
     return
 
 
@@ -1413,8 +1506,6 @@ def _(apsw, db_path):
                 break
 
         print(f"Initialized database pool: {db_pool.get_status()}")
-
-
     return (db_pool,)
 
 
@@ -1428,46 +1519,7 @@ def _(db_pool):
             "Execute function with a connection from the global pool"
             with db_pool() as conn:
                 return f(conn)
-    return (BaseDAO,)
-
-
-@app.cell
-def _(BaseDAO):
-    class TaskDAO(BaseDAO):
-        def get_all_tasks(self):
-            return self.with_conn(lambda conn: self._get_all_tasks(conn))
-        def _get_all_tasks(self, conn):
-            cursor = conn.cursor()
-            result = cursor.execute("SELECT * FROM tasks ORDER BY created_at DESC").fetchall()
-            return [dict(zip([d[0] for d in cursor.getdescription()], row)) for row in result]
-
-        def update_status(self, task_id, completed):
-            return self.with_conn(lambda conn: self._update_status(conn, task_id, completed))
-
-        def _update_status(self, conn, task_id, completed):
-            cursor = conn.cursor()
-            cursor.execute("UPDATE tasks SET completed = ? WHERE task_id = ?", [completed, task_id])
-            return conn.changes()
-
-        def bulk_update_status(self, task_ids, completed):
-            return self.with_conn(lambda conn: self._bulk_update_status(conn, task_ids, completed))
-        def _bulk_update_status(self, conn, task_ids, completed):
-            cursor = conn.cursor()
-            placeholders = ','.join(['?'] * len(task_ids))
-            cursor.execute(f"UPDATE tasks SET completed = ? WHERE task_id IN ({placeholders})", [completed] + task_ids)
-            return conn.changes()
-
-        def create_task(self, title, description=""):
-            return self.with_conn(lambda conn: self._create_task(conn, title, description))
-
-        def _create_task(self, conn, title, description):
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO tasks (title, description, completed) VALUES (?, ?, ?)", 
-                           [title, description, False])
-            return conn.last_insert_rowid()
-
-
-    return (TaskDAO,)
+    return
 
 
 @app.cell
@@ -1504,14 +1556,14 @@ def _(Button, Input, Td, Tr):
 
 
 @app.cell
-def _(FastHTML):
-    app = FastHTML(htmx=False)
-    return (app,)
+def _(FastHTML, T):
+    fastapp = FastHTML(htmx=False, datastar=T)
+    return (fastapp,)
 
 
 @app.cell
-def _(TaskDAO, app, task_table):
-    @app.get('/tasks')
+def _(TaskDAO, fastapp, task_table):
+    @fastapp.get('/tasks')
     def tasks_page(signals):
         task_dao = TaskDAO()
         tasks = task_dao.get_all_tasks()
@@ -1520,8 +1572,8 @@ def _(TaskDAO, app, task_table):
 
 
 @app.cell
-def _(TaskDAO, app, task_table):
-    @app.put('/task/{task_id}/toggle')
+def _(TaskDAO, fastapp, task_table):
+    @fastapp.put('/task/{task_id}/toggle')
     def toggle_task(task_id: int, signals):
         task_dao = TaskDAO()
         # Get current status and flip it
@@ -1538,8 +1590,9 @@ def _(TaskDAO, app, task_table):
 
 
 @app.cell
-def _(TaskDAO, app, task_table):
-    @app.put('/tasks/complete')
+def _(TaskDAO, fastapp, task_table):
+
+    @fastapp.put('/tasks/complete')
     def bulk_complete(signals):
         task_dao = TaskDAO()
         selected_ids = signals.get('selections', [])
@@ -1554,8 +1607,9 @@ def _(TaskDAO, app, task_table):
 
 
 @app.cell
-def _(TaskDAO, app, task_table):
-    @app.put('/tasks/incomplete')
+def _(TaskDAO, fastapp, task_table):
+
+    @fastapp.put('/tasks/incomplete')
     def bulk_incomplete(signals):
         task_dao = TaskDAO()
         selected_ids = signals.get('selections', [])
@@ -1569,52 +1623,424 @@ def _(TaskDAO, app, task_table):
     return
 
 
-app._unparsable_cell(
-    r"""
-    import subprocess
+@app.cell
+def _():
+    # Simple fake database
+    tasks = [
+        {"task_id": 1, "title": "Test task 1", "completed": False},
+        {"task_id": 2, "title": "Test task 2", "completed": True},
+        {"task_id": 3, "title": "Test task 3", "completed": False}
+    ]
+    return (tasks,)
+
+
+@app.cell
+def _(fake_tasks, tasks):
+    class TaskDAO:
+        def get_all_tasks(self):
+            return tasks
+
+        def update_status(self, task_id, completed):
+            for task in tasks:  
+                if task['task_id'] == task_id:
+                    task['completed'] = completed
+                    return 1
+            return 0
+
+        def bulk_update_status(self, task_ids, completed):
+            updated = 0
+            for task in fake_tasks:
+                if task['task_id'] in task_ids:
+                    task['completed'] = completed
+                    updated += 1
+            return updated
+
+        def create_task(self, title, description=""):
+            new_id = max(task['task_id'] for task in fake_tasks) + 1
+            new_task = {"task_id": new_id, "title": title, "description": description, "completed": False}
+            fake_tasks.append(new_task)
+            return new_id
+    return (TaskDAO,)
+
+
+@app.cell
+def _():
     import os
+    return (os,)
 
-    # Method 1: Shell escape with ! (simplest)
-    !ls -la
 
-    # Method 2: subprocess.run() (most flexible and recommended)
-    result = subprocess.run(['ls', '-la'], capture_output=True, text=True)
-    print(\"stdout:\", result.stdout)
-    print(\"stderr:\", result.stderr)
-    print(\"return code:\", result.returncode)
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""## Jupyter Server (WIP)""")
+    return
 
-    # Method 3: subprocess.check_output() (for capturing output)
-    try:
-        output = subprocess.check_output(['pwd'], text=True)
-        print(\"Current directory:\", output.strip())
-    except subprocess.CalledProcessError as e:
-        print(f\"Command failed: {e}\")
 
-    # Method 4: os.system() (simple but limited)
-    exit_code = os.system('echo \"Hello from os.system\"')
-    print(f\"Exit code: {exit_code}\")
+@app.cell
+def _():
+    # """Use FastHTML in Jupyter notebooks"""
 
-    # Method 5: subprocess.Popen() (for more control)
-    process = subprocess.Popen(['echo', 'Hello from Popen'], 
-                              stdout=subprocess.PIPE, 
-                              stderr=subprocess.PIPE, 
-                              text=True)
-    stdout, stderr = process.communicate()
-    print(\"Popen output:\", stdout.strip())
+    # # AUTOGENERATED! DO NOT EDIT! File to edit: ../nbs/api/06_jupyter.ipynb.
 
-    # For your specific case with fastmigrate:
-    # You can capture the output like this:
-    try:
-        migrate_result = subprocess.run(['fastmigrate'], 
-                                      capture_output=True, 
-                                      text=True, 
-                                      check=True)
-        print(\"Migration successful:\", migrate_result.stdout)
-    except subprocess.CalledProcessError as e:
-        print(\"Migration failed:\", e.stderr)
-    """,
-    name="_"
-)
+    # # %% auto 0
+
+
+    # # %% ../nbs/api/06_jupyter.ipynb
+    # import socket, time, uvicorn
+    # from threading import Thread
+
+    # from fastcore.meta import delegates
+    # from fasthtml.common import show as _show
+    # from fastcore.parallel import startthread
+    # try: from IPython.display import HTML,Markdown,display
+    # except ImportError: pass
+
+    # # %% ../nbs/api/06_jupyter.ipynb
+    # def nb_serve(app, log_level="error", port=8000, host='0.0.0.0', **kwargs):
+    #     "Start a Jupyter compatible uvicorn server with ASGI `app` on `port` with `log_level`"
+    #     server = uvicorn.Server(uvicorn.Config(app, log_level=log_level, host=host, port=port, **kwargs))
+    #     async def async_run_server(server): await server.serve()
+    #     @startthread
+    #     def run_server(): asyncio.run(async_run_server(server))
+    #     while not server.started: time.sleep(0.01)
+    #     return server
+
+    # # %% ../nbs/api/06_jupyter.ipynb
+    # async def nb_serve_async(app, log_level="error", port=8000, host='0.0.0.0', **kwargs):
+    #     "Async version of `nb_serve`"
+    #     server = uvicorn.Server(uvicorn.Config(app, log_level=log_level, host=host, port=port, **kwargs))
+    #     asyncio.get_running_loop().create_task(server.serve())
+    #     while not server.started: await asyncio.sleep(0.01)
+    #     return server
+
+    # # %% ../nbs/api/06_jupyter.ipynb
+    # def is_port_free(port, host='localhost'):
+    #     "Check if `port` is free on `host`"
+    #     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    #     try:
+    #         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    #         sock.bind((host, port))
+    #         return True
+    #     except OSError: return False
+    #     finally: sock.close()
+
+    # # %% ../nbs/api/06_jupyter.ipynb
+    # def wait_port_free(port, host='localhost', max_wait=3):
+    #     "Wait for `port` to be free on `host`"
+    #     start_time = time.time()
+    #     while not is_port_free(port):
+    #         if time.time() - start_time>max_wait: return print(f"Timeout")
+    #         time.sleep(0.1)
+
+    # # %% ../nbs/api/06_jupyter.ipynb
+    # @delegates(_show)
+    # def show(*s, **kwargs):
+    #     "Same as fasthtml.components.show, but also adds `htmx.process()`"
+    #     if IN_NOTEBOOK: return _show(*s, Script('if (window.htmx) htmx.process(document.body)'), **kwargs)
+    #     return _show(*s, **kwargs)
+
+    # # %% ../nbs/api/06_jupyter.ipynb
+    # def render_ft():
+    #     @patch
+    #     def _repr_markdown_(self:FT): return to_xml(Div(self, Script('if (window.htmx) htmx.process(document.body)')))
+
+    # # %% ../nbs/api/06_jupyter.ipynb
+    # def htmx_config_port(port=8000):
+    #     display(HTML('''
+    # <script>
+    # document.body.addEventListener('htmx:configRequest', (event) => {
+    #     if(event.detail.path.includes('://')) return;
+    #     htmx.config.selfRequestsOnly=false;
+    #     event.detail.path = `${location.protocol}//${location.hostname}:%s${event.detail.path}`;
+    # });
+    # </script>''' % port))
+
+    # # %% ../nbs/api/06_jupyter.ipynb
+    # class JupyUvi:
+    #     "Start and stop a Jupyter compatible uvicorn server with ASGI `app` on `port` with `log_level`"
+    #     def __init__(self, app, log_level="error", host='0.0.0.0', port=8000, start=True, **kwargs):
+    #         self.kwargs = kwargs
+    #         store_attr(but='start')
+    #         self.server = None
+    #         if start: self.start()
+    #         htmx_config_port(port)
+
+    #     def start(self):
+    #         self.server = nb_serve(self.app, log_level=self.log_level, host=self.host, port=self.port, **self.kwargs)
+
+    #     async def start_async(self):
+    #         self.server = await nb_serve_async(self.app, log_level=self.log_level, host=self.host, port=self.port, **self.kwargs)
+
+    #     def stop(self):
+    #         self.server.should_exit = True
+    #         wait_port_free(self.port)
+
+    # # %% ../nbs/api/06_jupyter.ipynb
+    # class JupyUviAsync(JupyUvi):
+    #     "Start and stop an async Jupyter compatible uvicorn server with ASGI `app` on `port` with `log_level`"
+    #     def __init__(self, app, log_level="error", host='0.0.0.0', port=8000, **kwargs):
+    #         super().__init__(app, log_level=log_level, host=host, port=port, start=False, **kwargs)
+
+    #     async def start(self):
+    #         self.server = await nb_serve_async(self.app, log_level=self.log_level, host=self.host, port=self.port, **self.kwargs)
+
+    #     def stop(self):
+    #         self.server.should_exit = True
+    #         wait_port_free(self.port)
+
+    # # %% ../nbs/api/06_jupyter.ipynb
+    return
+
+
+@app.cell
+def _():
+    # try:
+    #     server = JupyUvi(fastapp, port=5010)
+    # except NameError:
+    #     server = nb_serve(fastapp, port=5010)
+    return
+
+
+@app.cell
+def _():
+    import socket
+    import time
+    from typing import Callable
+    from fasthtml.jupyter import JupyUvi, is_port_free, wait_port_free
+    return JupyUvi, is_port_free
+
+
+@app.cell
+def _(JupyUvi, Optional, is_port_free, mo):
+    class MarimoServerController:
+        """A marimo-compatible widget for controlling FastHTML nb_server instances"""
+    
+        def __init__(self, app, default_port: int = 8000, default_host: str = '0.0.0.0'):
+            self.app = app
+            self.default_port = default_port
+            self.default_host = default_host
+        
+            # Create reactive state for server status
+            self.get_server_running, self.set_server_running = mo.state(False)
+            self.get_server_instance, self.set_server_instance = mo.state(None)
+            self.get_status_message, self.set_status_message = mo.state("Server stopped")
+        
+            # Create UI elements
+            self.port_input = mo.ui.number(
+                value=default_port,
+                start=1024,
+                stop=65535,
+                label="Port:",
+                disabled=False
+            )
+        
+            self.host_input = mo.ui.text(
+                value=default_host,
+                label="Host:",
+                disabled=False
+            )
+        
+            self.log_level_select = mo.ui.dropdown(
+                options=["error", "warning", "info", "debug"],
+                value="error",
+                label="Log Level:"
+            )
+        
+            # Start/Stop button with conditional logic
+            self.control_button = mo.ui.button(
+                label="Start Server",
+                on_click=self._toggle_server,
+                disabled=False
+            )
+        
+            # Status display
+            self.status_display = mo.ui.text(
+                value="",
+                label="Status:",
+                disabled=True
+            )
+    
+        def _toggle_server(self, _value=None):
+            """Toggle server start/stop"""
+            if self.get_server_running():
+                self._stop_server()
+            else:
+                self._start_server()
+    
+        def _start_server(self):
+            """Start the FastHTML server"""
+            try:
+                port = self.port_input.value
+                host = self.host_input.value
+                log_level = self.log_level_select.value
+            
+                # Check if port is available
+                if not is_port_free(port, host):
+                    self.set_status_message(f"Port {port} is already in use")
+                    return
+            
+                # Create and start server
+                server_instance = JupyUvi(
+                    self.app,
+                    port=port,
+                    host=host,
+                    log_level=log_level,
+                    start=True
+                )
+            
+                # Update state
+                self.set_server_instance(server_instance)
+                self.set_server_running(True)
+                self.set_status_message(f"Server running on {host}:{port}")
+            
+                # Update button label
+                self.control_button = mo.ui.button(
+                    label="Stop Server",
+                    on_click=self._toggle_server,
+                    disabled=False
+                )
+            
+            except Exception as e:
+                self.set_status_message(f"Failed to start server: {str(e)}")
+    
+        def _stop_server(self):
+            """Stop the FastHTML server"""
+            try:
+                server_instance = self.get_server_instance()
+                if server_instance:
+                    server_instance.stop()
+                
+                # Update state
+                self.set_server_instance(None)
+                self.set_server_running(False)
+                self.set_status_message("Server stopped")
+            
+                # Update button label
+                self.control_button = mo.ui.button(
+                    label="Start Server",
+                    on_click=self._toggle_server,
+                    disabled=False
+                )
+            
+            except Exception as e:
+                self.set_status_message(f"Failed to stop server: {str(e)}")
+    
+        def get_server_url(self) -> Optional[str]:
+            """Get the current server URL if running"""
+            if self.get_server_running():
+                host = self.host_input.value
+                port = self.port_input.value
+                return f"http://{host}:{port}"
+            return None
+    
+        def render(self):
+            """Render the complete widget UI"""
+            # Create the main widget layout
+            widget_content = mo.vstack([
+                mo.md("## FastHTML Server Controller"),
+            
+                # Configuration inputs
+                mo.hstack([self.port_input, self.host_input]),
+                self.log_level_select,
+            
+                # Control button
+                self.control_button,
+            
+                # Status display
+                mo.md(f"**Status:** {self.get_status_message()}"),
+            
+                # Server URL (if running)
+                mo.md(f"**URL:** {self.get_server_url() or 'Not running'}") if self.get_server_running() else mo.md(""),
+            
+                # Additional info
+                mo.callout(
+                    mo.md("""
+    **Usage:**
+    1. Configure the port and host settings
+    2. Select the desired log level
+    3. Click 'Start Server' to launch the FastHTML server
+    4. Click 'Stop Server' to shut it down
+                    """),
+                    kind="info"
+                )
+            ])
+        
+            return widget_content
+
+
+    # Example usage function
+    def create_server_widget(app, port: int = 8000, host: str = '0.0.0.0'):
+        """
+        Create a server controller widget for a FastHTML app
+    
+        Args:
+            app: FastHTML application instance
+            port: Default port number
+            host: Default host address
+    
+        Returns:
+            MarimoServerController instance
+        """
+        return MarimoServerController(app, port, host)
+
+
+    # Alternative simpler version using just marimo UI elements
+    def simple_server_controller(app, port: int = 8000):
+        """
+        A simpler version using basic marimo UI elements
+        """
+        # State management
+        get_running, set_running = mo.state(False)
+        get_server, set_server = mo.state(None)
+    
+        # UI Elements
+        port_input = mo.ui.number(value=port, start=1024, stop=65535, label="Port")
+    
+        def toggle_server(_value=None):
+            if get_running():
+                # Stop server
+                server = get_server()
+                if server:
+                    server.stop()
+                set_server(None)
+                set_running(False)
+            else:
+                # Start server
+                try:
+                    server = JupyUvi(app, port=port_input.value, start=True)
+                    set_server(server)
+                    set_running(True)
+                except Exception as e:
+                    print(f"Error starting server: {e}")
+    
+        start_button = mo.ui.button(
+            label="Stop Server" if get_running() else "Start Server",
+            on_click=toggle_server
+        )
+    
+        # Layout
+        return mo.vstack([
+            mo.md("### Server Control"),
+            port_input,
+            start_button,
+            mo.md(f"Status: {'Running' if get_running() else 'Stopped'}"),
+            mo.md(f"URL: http://localhost:{port_input.value}" if get_running() else "")
+        ])
+    return (create_server_widget,)
+
+
+@app.cell
+def _(create_server_widget, fastapp):
+    # Create the server controller widget
+    controller = create_server_widget(fastapp, port=5555)
+
+    # Render the widget in your marimo notebook
+    controller.render()
+    return
+
+
+@app.cell
+def _():
+    return
 
 
 if __name__ == "__main__":
