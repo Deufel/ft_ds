@@ -27,6 +27,12 @@ __generated_with = "0.16.0"
 app = marimo.App(width="medium")
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""## Imports""")
+    return
+
+
 @app.cell
 def _():
     import marimo as mo
@@ -168,7 +174,11 @@ def _(mo):
 @app.cell
 def _():
     from starlette.testclient import TestClient
-    return (TestClient,)
+    import socket
+    import time
+    from typing import Callable
+    from fasthtml.jupyter import JupyUvi, is_port_free, wait_port_free
+    return JupyUvi, TestClient, is_port_free
 
 
 @app.cell(hide_code=True)
@@ -581,7 +591,7 @@ def _(
         if res in (empty,None): res = p.default
         # We can cast str and list[str] to types; otherwise just return what we have
         if anno is empty: return res
-        try: return _fix_anno(anno, res)
+        try: return fix_annotation(anno, res)
         except ValueError: raise HTTPException(404, req.url.path) from None
 
 
@@ -763,6 +773,7 @@ def _(
     # %% ../nbs/api/00_core.ipynb
     def respond(req, heads, bdy):
         "Default FT response creation function"
+        print(f"Headers being added to HTML: {flat_xt(req.hdrs)}")
         body_wrap = getattr(req, 'body_wrap', noop_body)
         params = inspect.signature(body_wrap).parameters
         bw_args = (bdy, req) if len(params)>1 else (bdy,)
@@ -770,10 +781,20 @@ def _(
         return Html(Head(*heads, *flat_xt(req.hdrs)), body, **req.htmlkw)
 
     # %% ../nbs/api/00_core.ipynb
+    # def is_full_page(req, resp):
+    #     "Check if response should be rendered as full page or fragment"
+    #     if resp and any(getattr(o, 'tag', '')=='html' for o in resp): return True
+    #     return 'hx-request' in req.headers and 'hx-history-restore-request' not in req.headers
+
     def is_full_page(req, resp):
-        "Check if response should be rendered as full page or fragment"
+        "Check if response should be rendered as full page or fragment; mod for datastar"
         if resp and any(getattr(o, 'tag', '')=='html' for o in resp): return True
-        return 'hx-request' in req.headers and 'hx-history-restore-request' not in req.headers
+        # Fragment if HTMX request (but not history restore)
+        if 'hx-request' in req.headers and 'hx-history-restore-request' not in req.headers: return False
+        # Fragment if Datastar request
+        if req.headers.get('datastar-request') == 'true': return False
+        # Otherwise full page
+        return True
 
     # %% ../nbs/api/00_core.ipynb
     def partition_response(req, resp):
@@ -793,16 +814,28 @@ def _(
         return resp,kw
 
     # %% ../nbs/api/00_core.ipynb
+    # def extract_content(req, resp):
+    #     "Extract content and headers, render as full page or fragment"
+    #     print(f"Is full page: {is_full_page(req, resp)}")
+    #     hdr_tags = 'title','meta','link','style','base'
+    #     resp = tuplify(resp)
+    #     heads,bdy = partition(resp, lambda o: getattr(o, 'tag', '') in hdr_tags)
+    #     if not is_full_page(req, resp):
+    #         title = [] if any(getattr(o, 'tag', '')=='title' for o in heads) else [Title(req.app.title)]
+    #         canonical = [Link(rel="canonical", href=getattr(req, 'canonical', req.url))] if req.app.canonical else []
+    #         resp = respond(req, [*heads, *title, *canonical], bdy)
+    #     return to_xml_with_targets(req, resp, indent=fh_cfg.indent)
+
     def extract_content(req, resp):
-        "Extract content and headers, render as full page or fragment"
+        "Extract content and headers, render as full page"
         hdr_tags = 'title','meta','link','style','base'
         resp = tuplify(resp)
         heads,bdy = partition(resp, lambda o: getattr(o, 'tag', '') in hdr_tags)
-        if not is_full_page(req, resp):
-            title = [] if any(getattr(o, 'tag', '')=='title' for o in heads) else [Title(req.app.title)]
-            canonical = [Link(rel="canonical", href=getattr(req, 'canonical', req.url))] if req.app.canonical else []
-            resp = respond(req, [*heads, *title, *canonical], bdy)
+        title = [] if any(getattr(o, 'tag', '')=='title' for o in heads) else [Title(req.app.title)]
+        canonical = [Link(rel="canonical", href=getattr(req, 'canonical', req.url))] if req.app.canonical else []
+        resp = respond(req, [*heads, *title, *canonical], bdy)
         return to_xml_with_targets(req, resp, indent=fh_cfg.indent)
+
 
     # %% ../nbs/api/00_core.ipynb
     def is_ft_response(resp):
@@ -812,6 +845,10 @@ def _(
     # %% ../nbs/api/00_core.ipynb
     def create_response(req, resp, cls=empty, status_code=200):
         "Create appropriate HTTP response from request and response data"
+        print(f"Request headers: {dict(req.headers)}")
+        print(f"Is FT response: {is_ft_response(resp)}")
+        print(f"Datastar request: {req.headers.get('datastar-request')}")
+        print(f"Taking SSE path: {req.headers.get('datastar-request') == 'true'}")
         if not resp: resp=''
         if hasattr(resp, '__response__'): resp = resp.__response__(req)
         if cls in (Any,FT): cls=empty
@@ -1523,12 +1560,12 @@ def _(db_pool):
 
 
 @app.cell
-def _(Input, Table, Tbody, Th, Thead, Tr, task_row):
+def _(Button, Input, Table, Tbody, Td, Th, Thead, Tr, json):
     def task_table(tasks):
         return Table(
             Thead(
                 Tr(
-                    Th(Input(type="checkbox", data_bind_checked="$selections.length === $tasks.length")),
+                    Th(Input(type="checkbox", data_bind="checked $selections.length === $tasks.length")),
                     Th("Title"),
                     Th("Status"),
                     Th("Actions")
@@ -1537,34 +1574,33 @@ def _(Input, Table, Tbody, Th, Thead, Tr, task_row):
             Tbody(
                 *[task_row(task) for task in tasks]
             ),
-            data_signals={"selections": [], "tasks": tasks}
+            id="task-table",
+            data_signals=json.dumps({"selections": [], "tasks": tasks})
         )
-    return (task_table,)
-
-
-@app.cell
-def _(Button, Input, Td, Tr):
+    
     def task_row(task):
         return Tr(
             Td(Input(type="checkbox", value=str(task['task_id']), 
-                    data_bind_selections=f"task_{task['task_id']}")),
+                    data_bind=f"selections task_{task['task_id']}")),
             Td(task['title']),
             Td("✓" if task['completed'] else "○"),
             Td(Button("Toggle", data_on_click=f"@put('/task/{task['task_id']}/toggle')"))
         )
-    return (task_row,)
+
+    return (task_table,)
 
 
 @app.cell
-def _(FastHTML, T):
-    fastapp = FastHTML(htmx=False, datastar=T)
+def _(FastHTML):
+    fastapp = FastHTML(htmx=False, datastar=True)
     return (fastapp,)
 
 
 @app.cell
 def _(TaskDAO, fastapp, task_table):
     @fastapp.get('/tasks')
-    def tasks_page(signals):
+    def tasks_page(signals, req):  # Add req parameter
+        print(f"Request headers in route: {req.app.hdrs}")
         task_dao = TaskDAO()
         tasks = task_dao.get_all_tasks()
         return task_table(tasks)
@@ -1675,155 +1711,27 @@ def _(mo):
     return
 
 
-@app.cell
-def _():
-    # """Use FastHTML in Jupyter notebooks"""
-
-    # # AUTOGENERATED! DO NOT EDIT! File to edit: ../nbs/api/06_jupyter.ipynb.
-
-    # # %% auto 0
-
-
-    # # %% ../nbs/api/06_jupyter.ipynb
-    # import socket, time, uvicorn
-    # from threading import Thread
-
-    # from fastcore.meta import delegates
-    # from fasthtml.common import show as _show
-    # from fastcore.parallel import startthread
-    # try: from IPython.display import HTML,Markdown,display
-    # except ImportError: pass
-
-    # # %% ../nbs/api/06_jupyter.ipynb
-    # def nb_serve(app, log_level="error", port=8000, host='0.0.0.0', **kwargs):
-    #     "Start a Jupyter compatible uvicorn server with ASGI `app` on `port` with `log_level`"
-    #     server = uvicorn.Server(uvicorn.Config(app, log_level=log_level, host=host, port=port, **kwargs))
-    #     async def async_run_server(server): await server.serve()
-    #     @startthread
-    #     def run_server(): asyncio.run(async_run_server(server))
-    #     while not server.started: time.sleep(0.01)
-    #     return server
-
-    # # %% ../nbs/api/06_jupyter.ipynb
-    # async def nb_serve_async(app, log_level="error", port=8000, host='0.0.0.0', **kwargs):
-    #     "Async version of `nb_serve`"
-    #     server = uvicorn.Server(uvicorn.Config(app, log_level=log_level, host=host, port=port, **kwargs))
-    #     asyncio.get_running_loop().create_task(server.serve())
-    #     while not server.started: await asyncio.sleep(0.01)
-    #     return server
-
-    # # %% ../nbs/api/06_jupyter.ipynb
-    # def is_port_free(port, host='localhost'):
-    #     "Check if `port` is free on `host`"
-    #     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    #     try:
-    #         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    #         sock.bind((host, port))
-    #         return True
-    #     except OSError: return False
-    #     finally: sock.close()
-
-    # # %% ../nbs/api/06_jupyter.ipynb
-    # def wait_port_free(port, host='localhost', max_wait=3):
-    #     "Wait for `port` to be free on `host`"
-    #     start_time = time.time()
-    #     while not is_port_free(port):
-    #         if time.time() - start_time>max_wait: return print(f"Timeout")
-    #         time.sleep(0.1)
-
-    # # %% ../nbs/api/06_jupyter.ipynb
-    # @delegates(_show)
-    # def show(*s, **kwargs):
-    #     "Same as fasthtml.components.show, but also adds `htmx.process()`"
-    #     if IN_NOTEBOOK: return _show(*s, Script('if (window.htmx) htmx.process(document.body)'), **kwargs)
-    #     return _show(*s, **kwargs)
-
-    # # %% ../nbs/api/06_jupyter.ipynb
-    # def render_ft():
-    #     @patch
-    #     def _repr_markdown_(self:FT): return to_xml(Div(self, Script('if (window.htmx) htmx.process(document.body)')))
-
-    # # %% ../nbs/api/06_jupyter.ipynb
-    # def htmx_config_port(port=8000):
-    #     display(HTML('''
-    # <script>
-    # document.body.addEventListener('htmx:configRequest', (event) => {
-    #     if(event.detail.path.includes('://')) return;
-    #     htmx.config.selfRequestsOnly=false;
-    #     event.detail.path = `${location.protocol}//${location.hostname}:%s${event.detail.path}`;
-    # });
-    # </script>''' % port))
-
-    # # %% ../nbs/api/06_jupyter.ipynb
-    # class JupyUvi:
-    #     "Start and stop a Jupyter compatible uvicorn server with ASGI `app` on `port` with `log_level`"
-    #     def __init__(self, app, log_level="error", host='0.0.0.0', port=8000, start=True, **kwargs):
-    #         self.kwargs = kwargs
-    #         store_attr(but='start')
-    #         self.server = None
-    #         if start: self.start()
-    #         htmx_config_port(port)
-
-    #     def start(self):
-    #         self.server = nb_serve(self.app, log_level=self.log_level, host=self.host, port=self.port, **self.kwargs)
-
-    #     async def start_async(self):
-    #         self.server = await nb_serve_async(self.app, log_level=self.log_level, host=self.host, port=self.port, **self.kwargs)
-
-    #     def stop(self):
-    #         self.server.should_exit = True
-    #         wait_port_free(self.port)
-
-    # # %% ../nbs/api/06_jupyter.ipynb
-    # class JupyUviAsync(JupyUvi):
-    #     "Start and stop an async Jupyter compatible uvicorn server with ASGI `app` on `port` with `log_level`"
-    #     def __init__(self, app, log_level="error", host='0.0.0.0', port=8000, **kwargs):
-    #         super().__init__(app, log_level=log_level, host=host, port=port, start=False, **kwargs)
-
-    #     async def start(self):
-    #         self.server = await nb_serve_async(self.app, log_level=self.log_level, host=self.host, port=self.port, **self.kwargs)
-
-    #     def stop(self):
-    #         self.server.should_exit = True
-    #         wait_port_free(self.port)
-
-    # # %% ../nbs/api/06_jupyter.ipynb
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""### Server Widget""")
     return
-
-
-@app.cell
-def _():
-    # try:
-    #     server = JupyUvi(fastapp, port=5010)
-    # except NameError:
-    #     server = nb_serve(fastapp, port=5010)
-    return
-
-
-@app.cell
-def _():
-    import socket
-    import time
-    from typing import Callable
-    from fasthtml.jupyter import JupyUvi, is_port_free, wait_port_free
-    return JupyUvi, is_port_free
 
 
 @app.cell
 def _(JupyUvi, Optional, is_port_free, mo):
     class MarimoServerController:
         """A marimo-compatible widget for controlling FastHTML nb_server instances"""
-    
+
         def __init__(self, app, default_port: int = 8000, default_host: str = '0.0.0.0'):
             self.app = app
             self.default_port = default_port
             self.default_host = default_host
-        
+
             # Create reactive state for server status
             self.get_server_running, self.set_server_running = mo.state(False)
             self.get_server_instance, self.set_server_instance = mo.state(None)
             self.get_status_message, self.set_status_message = mo.state("Server stopped")
-        
+
             # Create UI elements
             self.port_input = mo.ui.number(
                 value=default_port,
@@ -1832,52 +1740,52 @@ def _(JupyUvi, Optional, is_port_free, mo):
                 label="Port:",
                 disabled=False
             )
-        
+
             self.host_input = mo.ui.text(
                 value=default_host,
                 label="Host:",
                 disabled=False
             )
-        
+
             self.log_level_select = mo.ui.dropdown(
                 options=["error", "warning", "info", "debug"],
                 value="error",
                 label="Log Level:"
             )
-        
+
             # Start/Stop button with conditional logic
             self.control_button = mo.ui.button(
                 label="Start Server",
                 on_click=self._toggle_server,
                 disabled=False
             )
-        
+
             # Status display
             self.status_display = mo.ui.text(
                 value="",
                 label="Status:",
                 disabled=True
             )
-    
+
         def _toggle_server(self, _value=None):
             """Toggle server start/stop"""
             if self.get_server_running():
                 self._stop_server()
             else:
                 self._start_server()
-    
+
         def _start_server(self):
             """Start the FastHTML server"""
             try:
                 port = self.port_input.value
                 host = self.host_input.value
                 log_level = self.log_level_select.value
-            
+
                 # Check if port is available
                 if not is_port_free(port, host):
                     self.set_status_message(f"Port {port} is already in use")
                     return
-            
+
                 # Create and start server
                 server_instance = JupyUvi(
                     self.app,
@@ -1886,44 +1794,44 @@ def _(JupyUvi, Optional, is_port_free, mo):
                     log_level=log_level,
                     start=True
                 )
-            
+
                 # Update state
                 self.set_server_instance(server_instance)
                 self.set_server_running(True)
                 self.set_status_message(f"Server running on {host}:{port}")
-            
+
                 # Update button label
                 self.control_button = mo.ui.button(
                     label="Stop Server",
                     on_click=self._toggle_server,
                     disabled=False
                 )
-            
+
             except Exception as e:
                 self.set_status_message(f"Failed to start server: {str(e)}")
-    
+
         def _stop_server(self):
             """Stop the FastHTML server"""
             try:
                 server_instance = self.get_server_instance()
                 if server_instance:
                     server_instance.stop()
-                
+
                 # Update state
                 self.set_server_instance(None)
                 self.set_server_running(False)
                 self.set_status_message("Server stopped")
-            
+
                 # Update button label
                 self.control_button = mo.ui.button(
                     label="Start Server",
                     on_click=self._toggle_server,
                     disabled=False
                 )
-            
+
             except Exception as e:
                 self.set_status_message(f"Failed to stop server: {str(e)}")
-    
+
         def get_server_url(self) -> Optional[str]:
             """Get the current server URL if running"""
             if self.get_server_running():
@@ -1931,26 +1839,26 @@ def _(JupyUvi, Optional, is_port_free, mo):
                 port = self.port_input.value
                 return f"http://{host}:{port}"
             return None
-    
+
         def render(self):
             """Render the complete widget UI"""
             # Create the main widget layout
             widget_content = mo.vstack([
                 mo.md("## FastHTML Server Controller"),
-            
+
                 # Configuration inputs
                 mo.hstack([self.port_input, self.host_input]),
                 self.log_level_select,
-            
+
                 # Control button
                 self.control_button,
-            
+
                 # Status display
                 mo.md(f"**Status:** {self.get_status_message()}"),
-            
+
                 # Server URL (if running)
                 mo.md(f"**URL:** {self.get_server_url() or 'Not running'}") if self.get_server_running() else mo.md(""),
-            
+
                 # Additional info
                 mo.callout(
                     mo.md("""
@@ -1963,7 +1871,7 @@ def _(JupyUvi, Optional, is_port_free, mo):
                     kind="info"
                 )
             ])
-        
+
             return widget_content
 
 
@@ -1971,12 +1879,12 @@ def _(JupyUvi, Optional, is_port_free, mo):
     def create_server_widget(app, port: int = 8000, host: str = '0.0.0.0'):
         """
         Create a server controller widget for a FastHTML app
-    
+
         Args:
             app: FastHTML application instance
             port: Default port number
             host: Default host address
-    
+
         Returns:
             MarimoServerController instance
         """
@@ -1991,10 +1899,10 @@ def _(JupyUvi, Optional, is_port_free, mo):
         # State management
         get_running, set_running = mo.state(False)
         get_server, set_server = mo.state(None)
-    
+
         # UI Elements
         port_input = mo.ui.number(value=port, start=1024, stop=65535, label="Port")
-    
+
         def toggle_server(_value=None):
             if get_running():
                 # Stop server
@@ -2011,12 +1919,12 @@ def _(JupyUvi, Optional, is_port_free, mo):
                     set_running(True)
                 except Exception as e:
                     print(f"Error starting server: {e}")
-    
+
         start_button = mo.ui.button(
             label="Stop Server" if get_running() else "Start Server",
             on_click=toggle_server
         )
-    
+
         # Layout
         return mo.vstack([
             mo.md("### Server Control"),
@@ -2028,6 +1936,12 @@ def _(JupyUvi, Optional, is_port_free, mo):
     return (create_server_widget,)
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""### Server UI""")
+    return
+
+
 @app.cell
 def _(create_server_widget, fastapp):
     # Create the server controller widget
@@ -2035,6 +1949,12 @@ def _(create_server_widget, fastapp):
 
     # Render the widget in your marimo notebook
     controller.render()
+    return
+
+
+@app.cell
+def _(fastapp):
+    print(f"App headers: {fastapp.hdrs}")
     return
 
 
