@@ -112,7 +112,6 @@ def _():
         List,
         Mapping,
         Middleware,
-        Optional,
         Parameter,
         RedirectResponse,
         Request,
@@ -178,7 +177,7 @@ def _():
     import time
     from typing import Callable
     from fasthtml.jupyter import JupyUvi, is_port_free, wait_port_free
-    return JupyUvi, TestClient, is_port_free
+    return JupyUvi, TestClient
 
 
 @app.cell(hide_code=True)
@@ -508,45 +507,6 @@ def _(
             res = json.dumps(content, ensure_ascii=False, allow_nan=False, indent=None, separators=(",", ":"), default=str)
             return res.encode("utf-8")
 
-    # %% ../nbs/api/00_core.ipynb
-    # async def find_param(req, arg:str, p:Parameter):
-    #     "In `req` find param named `arg` of type in `p` (`arg` is ignored for body types)"
-    #     anno = p.annotation
-    #     # If there's an annotation of special types, return object of that type
-    #     # GenericAlias is a type of typing for iterators like list[int] that is not a class
-    #     if isinstance(anno, type) and not isinstance(anno, GenericAlias):
-    #         if issubclass(anno, Request): return req
-    #         if issubclass(anno, HtmxHeaders): return get_htmx_headers(req.headers)
-    #         if issubclass(anno, Starlette): return req.scope['app']
-    #         if is_body_type(anno) and 'session'.startswith(arg.lower()): return req.scope.get('session', {})
-    #         if is_body_type(anno): return await from_body(req, p)
-    #     # If there's no annotation, check for special names
-    #     if anno is empty:
-    #         if 'request'.startswith(arg.lower()): return req
-    #         if 'session'.startswith(arg.lower()): return req.scope.get('session', {})
-    #         if arg.lower()=='scope': return dict2obj(req.scope)
-    #         if arg.lower()=='auth': return req.scope.get('auth', None)
-    #         if arg.lower()=='htmx': return get_htmx_headers(req.headers)
-    #         if arg.lower()=='app': return req.scope['app']
-    #         if arg.lower()=='body': return (await req.body()).decode()
-    #         if arg.lower() in ('hdrs','ftrs','bodykw','htmlkw'): return getattr(req, arg.lower())
-    #         if arg!='resp': warn(f"`{arg} has no type annotation and is not a recognised special name, so is ignored.")
-    #         return None
-    #     # Look through path, cookies, headers, query, and body in that order
-    #     res = req.path_params.get(arg, None)
-    #     if res in (empty,None): res = req.cookies.get(arg, None)
-    #     if res in (empty,None): res = req.headers.get(snake2hyphens(arg), None)
-    #     if res in (empty,None): res = req.query_params.getlist(arg)
-    #     if res==[]: res = None
-    #     if res in (empty,None): res = get_form_item(await parse_form(req), arg)
-    #     # Raise 400 error if the param does not include a default
-    #     if (res in (empty,None)) and p.default is empty: raise HTTPException(400, f"Missing required field: {arg}")
-    #     # If we have a default, return that if we have no value
-    #     if res in (empty,None): res = p.default
-    #     # We can cast str and list[str] to types; otherwise just return what we have
-    #     if anno is empty: return res
-    #     try: return fix_annotation(anno, res)
-    #     except ValueError: raise HTTPException(404, req.url.path) from None
     async def find_param(req, arg:str, p:Parameter):
         "In `req` find param named `arg` of type in `p` (`arg` is ignored for body types)"
         anno = p.annotation
@@ -773,18 +733,11 @@ def _(
     # %% ../nbs/api/00_core.ipynb
     def respond(req, heads, bdy):
         "Default FT response creation function"
-        print(f"Headers being added to HTML: {flat_xt(req.hdrs)}")
         body_wrap = getattr(req, 'body_wrap', noop_body)
         params = inspect.signature(body_wrap).parameters
         bw_args = (bdy, req) if len(params)>1 else (bdy,)
         body = Body(body_wrap(*bw_args), *flat_xt(req.ftrs), **req.bodykw)
         return Html(Head(*heads, *flat_xt(req.hdrs)), body, **req.htmlkw)
-
-    # %% ../nbs/api/00_core.ipynb
-    # def is_full_page(req, resp):
-    #     "Check if response should be rendered as full page or fragment"
-    #     if resp and any(getattr(o, 'tag', '')=='html' for o in resp): return True
-    #     return 'hx-request' in req.headers and 'hx-history-restore-request' not in req.headers
 
     def is_full_page(req, resp):
         "Check if response should be rendered as full page or fragment; mod for datastar"
@@ -813,19 +766,6 @@ def _(
         if len(resp)==1: resp = resp[0]
         return resp,kw
 
-    # %% ../nbs/api/00_core.ipynb
-    # def extract_content(req, resp):
-    #     "Extract content and headers, render as full page or fragment"
-    #     print(f"Is full page: {is_full_page(req, resp)}")
-    #     hdr_tags = 'title','meta','link','style','base'
-    #     resp = tuplify(resp)
-    #     heads,bdy = partition(resp, lambda o: getattr(o, 'tag', '') in hdr_tags)
-    #     if not is_full_page(req, resp):
-    #         title = [] if any(getattr(o, 'tag', '')=='title' for o in heads) else [Title(req.app.title)]
-    #         canonical = [Link(rel="canonical", href=getattr(req, 'canonical', req.url))] if req.app.canonical else []
-    #         resp = respond(req, [*heads, *title, *canonical], bdy)
-    #     return to_xml_with_targets(req, resp, indent=fh_cfg.indent)
-
     def extract_content(req, resp):
         "Extract content and headers, render as full page"
         hdr_tags = 'title','meta','link','style','base'
@@ -845,7 +785,6 @@ def _(
     # %% ../nbs/api/00_core.ipynb
     def create_response(req, resp, cls=empty, status_code=200):
         "Create appropriate HTTP response from request and response data"
-        print(f"Request headers: {dict(req.headers)}")
         print(f"Is FT response: {is_ft_response(resp)}")
         print(f"Datastar request: {req.headers.get('datastar-request')}")
         print(f"Taking SSE path: {req.headers.get('datastar-request') == 'true'}")
@@ -1436,157 +1375,44 @@ def _(mo):
 @app.cell
 def _():
     import apsw
-    return (apsw,)
-
-
-@app.cell
-def _(apsw, db_path):
-    #| export
-
-
-    class DBPool:
-        """
-        Connection pool for SQLite database access using APSW.
-
-        Manages a pool of database connections to improve performance by reusing
-        connections rather than creating new ones for each operation.
-        """
-
-        def __init__(self, 
-                     db_path: str = "data/app.db",  # Path to the SQLite database file
-                     max_size: int = 6              # Maximum number of connections to keep in pool
-                    ):
-            """Initialize the database connection pool."""
-            self.db_path, self.max_size, self.pool = db_path, max_size, []
-
-        def get_connection(self):
-            """
-            Get a database connection from the pool or create a new one.
-
-            Returns a connection with 30-second busy timeout configured.
-            """
-            if self.pool: 
-                return self.pool.pop()
-
-            try:
-                conn = apsw.Connection(self.db_path)
-                conn.setbusytimeout(30000)  # 30 second timeout
-                return conn
-            except Exception as e:
-                print(f"Failed to create connection: {e}")
-                raise
-
-        def return_connection(self, 
-                             conn  # Database connection to return to pool
-                            ):
-            """Return a connection to the pool or close it if pool is full."""
-            if len(self.pool) < self.max_size: 
-                self.pool.append(conn)
-            else: 
-                conn.close()
-
-        def get_status(self):
-            """Get current pool status information."""
-            return {
-                'current_pool_size': len(self.pool), 
-                'max_pool_size': self.max_size, 
-                'database_path': self.db_path,
-                'connections_available': len(self.pool)
-            }
-
-        def __call__(self):
-            """
-            Get a connection with context manager support.
-
-            Returns a DBConnection context manager for safe connection handling.
-            """
-            return DBConnection(self)
-
-
-    #| export
-
-    class DBConnection:
-        """Context manager for safe database connection handling."""
-
-        def __init__(self, pool: DBPool):  # DBPool instance to get/return connections from
-            """Initialize connection context manager."""
-            self.pool, self.conn = pool, None
-
-        def __enter__(self):
-            """Enter context manager and get database connection."""
-            self.conn = self.pool.get_connection()
-            return self.conn
-
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            """Exit context manager and return connection to pool."""
-            if self.conn:
-                self.pool.return_connection(self.conn)
-
-
-    #| export
-
-    def initialize_database_pool(max_size: int = 6):
-        """Initialize the global database connection pool using global db_path."""
-        global db_pool
-
-        # Directly use the global db_path variable
-        db_pool = DBPool(str(db_path), max_size)
-
-        # Pre-populate pool with initial connections
-        initial_connections = min(3, max_size)
-        for _ in range(initial_connections): 
-            try: 
-                conn = db_pool.get_connection()
-                db_pool.return_connection(conn)
-            except Exception as e:
-                print(f"Failed to pre-populate connection: {e}")
-                break
-
-        print(f"Initialized database pool: {db_pool.get_status()}")
-    return (db_pool,)
-
-
-@app.cell
-def _(db_pool):
-    # global variation makes sense everything needs access to the pool
-    class BaseDAO:
-        "Base Data Access Object with connection management using global pool"
-
-        def with_conn(self, f):
-            "Execute function with a connection from the global pool"
-            with db_pool() as conn:
-                return f(conn)
     return
 
 
 @app.cell
-def _(Button, Input, Table, Tbody, Td, Th, Thead, Tr, json):
+def _(Button, Div, Input, Table, Tbody, Td, Th, Thead, Tr, json):
     def task_table(tasks):
-        return Table(
-            Thead(
-                Tr(
-                    Th(Input(type="checkbox", data_bind="checked $selections.length === $tasks.length")),
-                    Th("Title"),
-                    Th("Status"),
-                    Th("Actions")
-                )
+        return  Div(
+            Div(
+                Button("Complete Selected", data_on_click="@put('/tasks/complete')"),
+                Button("Incomplete Selected", data_on_click="@put('/tasks/incomplete')")
             ),
-            Tbody(
-                *[task_row(task) for task in tasks]
+            Table(
+                Thead(
+                    Tr(
+                        Th(Input(type="checkbox", data_bind="checked $selections.length === $tasks.length")),
+                        Th("Title"),
+                        Th("Status"),
+                        Th("Actions")
+                    )
+                ),
+                Tbody(
+                    *[task_row(task) for task in tasks]
+                ),
+                id="task-table",
+                data_signals=json.dumps({"selections": [], "tasks": tasks})
             ),
-            id="task-table",
-            data_signals=json.dumps({"selections": [], "tasks": tasks})
+            id="task-container"
         )
-    
+
     def task_row(task):
         return Tr(
             Td(Input(type="checkbox", value=str(task['task_id']), 
-                    data_bind=f"selections task_{task['task_id']}")),
+                    data_bind=f"selections {task['task_id']}")),
             Td(task['title']),
             Td("✓" if task['completed'] else "○"),
-            Td(Button("Toggle", data_on_click=f"@put('/task/{task['task_id']}/toggle')"))
+            Td(Button("Toggle", data_on_click=f"@put('/task/{task['task_id']}/toggle')")),
+            id=f"{task['task_id']}"
         )
-
     return (task_table,)
 
 
@@ -1597,10 +1423,17 @@ def _(FastHTML):
 
 
 @app.cell
+def _(A, fastapp):
+    @fastapp.get('/')
+    def index(signals, req):  # Add req parameter
+        return A(href="/tasks")("task toggle")
+    return
+
+
+@app.cell
 def _(TaskDAO, fastapp, task_table):
     @fastapp.get('/tasks')
     def tasks_page(signals, req):  # Add req parameter
-        print(f"Request headers in route: {req.app.hdrs}")
         task_dao = TaskDAO()
         tasks = task_dao.get_all_tasks()
         return task_table(tasks)
@@ -1631,7 +1464,12 @@ def _(TaskDAO, fastapp, task_table):
     @fastapp.put('/tasks/complete')
     def bulk_complete(signals):
         task_dao = TaskDAO()
-        selected_ids = signals.get('selections', [])
+        selected_ids = [int(v) for k, v in signals.items() 
+                    if k.startswith('selections task_') and v]
+        # debug
+        print(f"Signals received: {signals}")
+        print(f"Selected IDs: {signals.get('selections', [])}")
+        print(f"All signal keys: {list(signals.keys())}")
 
         if selected_ids:
             task_dao.bulk_update_status(selected_ids, True)
@@ -1648,7 +1486,8 @@ def _(TaskDAO, fastapp, task_table):
     @fastapp.put('/tasks/incomplete')
     def bulk_incomplete(signals):
         task_dao = TaskDAO()
-        selected_ids = signals.get('selections', [])
+        selected_ids = [int(v) for k, v in signals.items() 
+                    if k.startswith('selections task_') and v]
 
         if selected_ids:
             task_dao.bulk_update_status(selected_ids, False)
@@ -1713,248 +1552,43 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.md(r"""### Server Widget""")
-    return
-
-
-@app.cell
-def _(JupyUvi, Optional, is_port_free, mo):
-    class MarimoServerController:
-        """A marimo-compatible widget for controlling FastHTML nb_server instances"""
-
-        def __init__(self, app, default_port: int = 8000, default_host: str = '0.0.0.0'):
-            self.app = app
-            self.default_port = default_port
-            self.default_host = default_host
-
-            # Create reactive state for server status
-            self.get_server_running, self.set_server_running = mo.state(False)
-            self.get_server_instance, self.set_server_instance = mo.state(None)
-            self.get_status_message, self.set_status_message = mo.state("Server stopped")
-
-            # Create UI elements
-            self.port_input = mo.ui.number(
-                value=default_port,
-                start=1024,
-                stop=65535,
-                label="Port:",
-                disabled=False
-            )
-
-            self.host_input = mo.ui.text(
-                value=default_host,
-                label="Host:",
-                disabled=False
-            )
-
-            self.log_level_select = mo.ui.dropdown(
-                options=["error", "warning", "info", "debug"],
-                value="error",
-                label="Log Level:"
-            )
-
-            # Start/Stop button with conditional logic
-            self.control_button = mo.ui.button(
-                label="Start Server",
-                on_click=self._toggle_server,
-                disabled=False
-            )
-
-            # Status display
-            self.status_display = mo.ui.text(
-                value="",
-                label="Status:",
-                disabled=True
-            )
-
-        def _toggle_server(self, _value=None):
-            """Toggle server start/stop"""
-            if self.get_server_running():
-                self._stop_server()
-            else:
-                self._start_server()
-
-        def _start_server(self):
-            """Start the FastHTML server"""
-            try:
-                port = self.port_input.value
-                host = self.host_input.value
-                log_level = self.log_level_select.value
-
-                # Check if port is available
-                if not is_port_free(port, host):
-                    self.set_status_message(f"Port {port} is already in use")
-                    return
-
-                # Create and start server
-                server_instance = JupyUvi(
-                    self.app,
-                    port=port,
-                    host=host,
-                    log_level=log_level,
-                    start=True
-                )
-
-                # Update state
-                self.set_server_instance(server_instance)
-                self.set_server_running(True)
-                self.set_status_message(f"Server running on {host}:{port}")
-
-                # Update button label
-                self.control_button = mo.ui.button(
-                    label="Stop Server",
-                    on_click=self._toggle_server,
-                    disabled=False
-                )
-
-            except Exception as e:
-                self.set_status_message(f"Failed to start server: {str(e)}")
-
-        def _stop_server(self):
-            """Stop the FastHTML server"""
-            try:
-                server_instance = self.get_server_instance()
-                if server_instance:
-                    server_instance.stop()
-
-                # Update state
-                self.set_server_instance(None)
-                self.set_server_running(False)
-                self.set_status_message("Server stopped")
-
-                # Update button label
-                self.control_button = mo.ui.button(
-                    label="Start Server",
-                    on_click=self._toggle_server,
-                    disabled=False
-                )
-
-            except Exception as e:
-                self.set_status_message(f"Failed to stop server: {str(e)}")
-
-        def get_server_url(self) -> Optional[str]:
-            """Get the current server URL if running"""
-            if self.get_server_running():
-                host = self.host_input.value
-                port = self.port_input.value
-                return f"http://{host}:{port}"
-            return None
-
-        def render(self):
-            """Render the complete widget UI"""
-            # Create the main widget layout
-            widget_content = mo.vstack([
-                mo.md("## FastHTML Server Controller"),
-
-                # Configuration inputs
-                mo.hstack([self.port_input, self.host_input]),
-                self.log_level_select,
-
-                # Control button
-                self.control_button,
-
-                # Status display
-                mo.md(f"**Status:** {self.get_status_message()}"),
-
-                # Server URL (if running)
-                mo.md(f"**URL:** {self.get_server_url() or 'Not running'}") if self.get_server_running() else mo.md(""),
-
-                # Additional info
-                mo.callout(
-                    mo.md("""
-    **Usage:**
-    1. Configure the port and host settings
-    2. Select the desired log level
-    3. Click 'Start Server' to launch the FastHTML server
-    4. Click 'Stop Server' to shut it down
-                    """),
-                    kind="info"
-                )
-            ])
-
-            return widget_content
-
-
-    # Example usage function
-    def create_server_widget(app, port: int = 8000, host: str = '0.0.0.0'):
-        """
-        Create a server controller widget for a FastHTML app
-
-        Args:
-            app: FastHTML application instance
-            port: Default port number
-            host: Default host address
-
-        Returns:
-            MarimoServerController instance
-        """
-        return MarimoServerController(app, port, host)
-
-
-    # Alternative simpler version using just marimo UI elements
-    def simple_server_controller(app, port: int = 8000):
-        """
-        A simpler version using basic marimo UI elements
-        """
-        # State management
-        get_running, set_running = mo.state(False)
-        get_server, set_server = mo.state(None)
-
-        # UI Elements
-        port_input = mo.ui.number(value=port, start=1024, stop=65535, label="Port")
-
-        def toggle_server(_value=None):
-            if get_running():
-                # Stop server
-                server = get_server()
-                if server:
-                    server.stop()
-                set_server(None)
-                set_running(False)
-            else:
-                # Start server
-                try:
-                    server = JupyUvi(app, port=port_input.value, start=True)
-                    set_server(server)
-                    set_running(True)
-                except Exception as e:
-                    print(f"Error starting server: {e}")
-
-        start_button = mo.ui.button(
-            label="Stop Server" if get_running() else "Start Server",
-            on_click=toggle_server
-        )
-
-        # Layout
-        return mo.vstack([
-            mo.md("### Server Control"),
-            port_input,
-            start_button,
-            mo.md(f"Status: {'Running' if get_running() else 'Stopped'}"),
-            mo.md(f"URL: http://localhost:{port_input.value}" if get_running() else "")
-        ])
-    return (create_server_widget,)
-
-
-@app.cell(hide_code=True)
-def _(mo):
     mo.md(r"""### Server UI""")
     return
 
 
 @app.cell
-def _(create_server_widget, fastapp):
-    # Create the server controller widget
-    controller = create_server_widget(fastapp, port=5555)
-
-    # Render the widget in your marimo notebook
-    controller.render()
-    return
+def _(mo):
+    server_switch = mo.ui.switch(label="FastHTML Server")
+    get_server, set_server = mo.state(None)
+    return get_server, server_switch, set_server
 
 
 @app.cell
-def _(fastapp):
-    print(f"App headers: {fastapp.hdrs}")
+def _(JupyUvi, fastapp, get_server, server_switch, set_server):
+    if server_switch.value:
+        # Start server only if not already running
+        if get_server() is None:
+            server = JupyUvi(fastapp, port=8000)
+            set_server(server)
+            status = "Server started at http://localhost:8000"
+        else:
+            status = "Server already running at http://localhost:8000"
+    else:
+        # Stop server if running
+        current_server = get_server()
+        if current_server is not None:
+            current_server.stop()
+            set_server(None)
+            status = "Server stopped"
+        else:
+            status = "Server already stopped"
+    return (status,)
+
+
+@app.cell
+def _(mo, server_switch, status):
+    _status = mo.md(f"**Status:** {status}")
+    mo.vstack([ server_switch, _status])
     return
 
 
