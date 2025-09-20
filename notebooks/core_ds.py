@@ -1419,6 +1419,7 @@ def _(Button, Div, Input, Table, Tbody, Td, Th, Thead, Tr, json):
 @app.cell
 def _(FastHTML):
     fastapp = FastHTML(htmx=False, datastar=True)
+
     return (fastapp,)
 
 
